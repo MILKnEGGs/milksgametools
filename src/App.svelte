@@ -67,7 +67,7 @@
       <p>
         Tip: on iPhone or iPad, open this in Safari and use Share → Add to Home Screen for full-screen trackers.
       </p>
-      <p class="ver">v{__APP_VERSION__}</p>
+      <p class="ver">v{__APP_VERSION__} · <a href="https://milkneggs.github.io/pitch/milksgametools.html" target="_blank" rel="noopener">See what it does</a></p>
     </footer>
   </main>
 {/if}
