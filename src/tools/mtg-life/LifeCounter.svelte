@@ -1,5 +1,6 @@
 <script lang="ts">
   import { persisted } from '../../lib/persisted.svelte';
+  import { spin } from '../../lib/random';
   import { keepAwake } from '../../lib/wakeLock';
   import { fresh, MAX_PLAYERS, MIN_PLAYERS, repair, resetLife, seats, START_OPTIONS, type LifeState } from './life';
 
@@ -36,10 +37,12 @@
     deltaTimers[i] = setTimeout(() => (deltas[i] = 0), 1800);
   }
 
-  // Each finger (pointerId) gets its own hold-to-repeat timer, so several players can
-  // tap or hold at once without interfering with each other.
-  const HOLD_DELAY = 450;
-  const REPEAT = 110;
+  // A tap counts 1. Holding turns it into steps of 10: the first step tops the tap up to
+  // exactly 10, then another 10 follows every REPEAT ms until the finger lifts.
+  // Each finger (pointerId) gets its own timers, so several players can tap or hold at once.
+  const HOLD_DELAY = 500;
+  const REPEAT = 700;
+  const STEP = 10;
   const holds = new Map<number, { delay: ReturnType<typeof setTimeout>; repeat?: ReturnType<typeof setInterval> }>();
 
   function press(e: PointerEvent, i: number, d: number) {
@@ -53,7 +56,10 @@
     release(e);
     change(i, d);
     const h: { delay: ReturnType<typeof setTimeout>; repeat?: ReturnType<typeof setInterval> } = {
-      delay: setTimeout(() => (h.repeat = setInterval(() => change(i, d), REPEAT)), HOLD_DELAY),
+      delay: setTimeout(() => {
+        change(i, d * (STEP - 1));
+        h.repeat = setInterval(() => change(i, d * STEP), REPEAT);
+      }, HOLD_DELAY),
     };
     holds.set(e.pointerId, h);
   }
@@ -77,6 +83,33 @@
     deltas.fill(0);
     menu = false;
   }
+
+  // Random first player: a highlight runs around the table and stops on someone, who then
+  // gets a "Goes first" banner. Player indexes 0..count-1 already run around the table.
+  let lit = $state<number | null>(null);
+  let first = $state<number | null>(null);
+  let firstTimer: ReturnType<typeof setTimeout>;
+  let cancelSpin = () => {};
+  $effect(() => () => {
+    cancelSpin();
+    clearTimeout(firstTimer);
+  });
+
+  function pickFirst() {
+    menu = false;
+    first = null;
+    cancelSpin();
+    cancelSpin = spin(
+      s.count,
+      (i) => (lit = i),
+      (i) => {
+        lit = null;
+        first = i;
+        clearTimeout(firstTimer);
+        firstTimer = setTimeout(() => (first = null), 3500);
+      },
+    );
+  }
 </script>
 
 <div class="board" bind:this={board} style:grid-template-columns="repeat({layout.columns}, 1fr)">
@@ -84,10 +117,13 @@
     {@const p = s.players[seat.player]}
     {@const d = deltas[seat.player]}
     <div class="seat" style:grid-row={seat.row} style:grid-column={seat.column} style:--c={p.color}>
-      <div class="panel" class:turned={seat.turned} class:dead={p.life <= 0}>
+      <div class="panel" class:turned={seat.turned} class:dead={p.life <= 0} class:lit={lit === seat.player}>
+        {#if first === seat.player}
+          <div class="banner">Goes first!</div>
+        {/if}
         <button
           class="hit minus"
-          aria-label="{p.name} loses 1 life"
+          aria-label="{p.name} loses 1 life (hold for 10)"
           onpointerdown={(e) => press(e, seat.player, -1)}
           onpointerup={release}
           onpointercancel={release}
@@ -96,7 +132,7 @@
         >
         <button
           class="hit plus"
-          aria-label="{p.name} gains 1 life"
+          aria-label="{p.name} gains 1 life (hold for 10)"
           onpointerdown={(e) => press(e, seat.player, 1)}
           onpointerup={release}
           onpointercancel={release}
@@ -148,6 +184,9 @@
 
       <h3>&nbsp;</h3>
       <div class="row">
+        <button class="btn wide" onclick={pickFirst}>🎲 Random first player</button>
+      </div>
+      <div class="row" style:margin-top="8px">
         <button class="btn wide primary" style:--accent="#a855f7" onclick={newGame}>New game ({s.startLife} life)</button>
       </div>
       <div class="row" style:margin-top="8px">
@@ -187,6 +226,37 @@
   }
   .panel.dead {
     filter: grayscale(0.85) brightness(0.6);
+  }
+  .panel.lit {
+    box-shadow: inset 0 0 0 6px #fff;
+    background: color-mix(in srgb, var(--c) 80%, #fff);
+  }
+  .banner {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--c) 85%, #fff);
+    color: #111;
+    font-size: min(20cqh, 12cqw);
+    font-weight: 800;
+    pointer-events: none;
+    animation: banner 3.5s ease-out forwards;
+  }
+  @keyframes banner {
+    0% {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    10%,
+    80% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
   }
   .hit {
     flex: 1;

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { persisted } from '../../lib/persisted.svelte';
+  import { spin } from '../../lib/random';
   import { keepAwake } from '../../lib/wakeLock';
   import { fresh, mineFor, newGame, nudge, setMemory, undo, valueOf, type MemoryState, type Side } from './memory';
 
@@ -18,9 +19,36 @@
     const mine = mineFor(side, s.memory);
     return mine === n ? 'on' : mine > n ? 'fill' : '';
   }
+  // "Goes first" banner on the chosen half, and the half lit up while a random pick spins.
+  let banner = $state<Side | null>(null);
+  let spinning = $state<Side | null>(null);
+  let bannerTimer: ReturnType<typeof setTimeout>;
+  let cancelSpin = () => {};
+  $effect(() => () => {
+    cancelSpin();
+    clearTimeout(bannerTimer);
+  });
+
   function start(first: Side) {
     newGame(s, first);
     menu = false;
+    banner = first;
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => (banner = null), 3000);
+  }
+  function startRandom() {
+    const sides: Side[] = ['bottom', 'top'];
+    menu = false;
+    banner = null;
+    cancelSpin();
+    cancelSpin = spin(
+      2,
+      (i) => (spinning = sides[i]),
+      (i) => {
+        spinning = null;
+        start(sides[i]);
+      },
+    );
   }
 </script>
 
@@ -40,7 +68,16 @@
   {@const turned = side === 'top' && s.facing}
   {@const flat = side === 'top' && !s.facing}
   {@const mine = mineFor(side, s.memory)}
-  <div class="half" class:turned class:flat class:active={s.active === side} style:--c={COLOR[side]}>
+  <div
+    class="half"
+    class:turned
+    class:flat
+    class:active={spinning ? spinning === side : s.active === side}
+    style:--c={COLOR[side]}
+  >
+    {#if banner === side}
+      <div class="banner">You go first!</div>
+    {/if}
     {@render cells(side, flat ? [...NEAR].reverse() : NEAR)}
     {@render cells(side, flat ? [...FAR].reverse() : FAR)}
     <div class="controls">
@@ -80,6 +117,9 @@
       <h2>Memory Gauge</h2>
       <h3>New game: who goes first?</h3>
       <div class="row">
+        <button class="btn wide primary" onclick={startRandom}>🎲 Random</button>
+      </div>
+      <div class="row" style:margin-top="8px">
         <button class="btn wide" style:background={COLOR.bottom} style:color="#111" onclick={() => start('bottom')}>
           Bottom (orange)
         </button>
@@ -112,6 +152,7 @@
     margin: 0 auto;
   }
   .half {
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -121,6 +162,34 @@
     border-radius: 20px;
     background: var(--surface);
     transition: background 0.25s, box-shadow 0.25s;
+  }
+  .banner {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--c) 82%, transparent);
+    color: #111;
+    font-size: clamp(30px, 9vmin, 56px);
+    font-weight: 800;
+    pointer-events: none;
+    animation: banner 3s ease-out forwards;
+  }
+  @keyframes banner {
+    0% {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    10%,
+    80% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+    }
   }
   .half.active {
     background: color-mix(in srgb, var(--c) 16%, var(--surface));
