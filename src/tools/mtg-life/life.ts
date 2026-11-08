@@ -1,7 +1,11 @@
 // Magic life counter for 2–6 players sharing one tablet lying flat on the table.
 // Seats are split between the two long edges: the top row is turned 180° to face across.
 
-export type Player = { name: string; life: number; color: string };
+/**
+ * One seat. `name` and `color` are used while the seat is a guest; with `profileId` set the
+ * profile's look wins. Seats keep their profile across new games, so regulars sit down once.
+ */
+export type Player = { name: string; life: number; color: string; profileId?: string };
 
 export type LifeState = {
   count: number;
@@ -31,6 +35,17 @@ export function repair(s: LifeState): LifeState {
 
 export function resetLife(s: LifeState): void {
   for (const p of s.players) p.life = s.startLife;
+}
+
+/** Put a profile in a seat (or make it a guest with undefined). A profile sits in one seat at most. */
+export function assignSeat(s: LifeState, seat: number, profileId: string | undefined): void {
+  if (profileId) for (const p of s.players) if (p.profileId === profileId) p.profileId = undefined;
+  s.players[seat].profileId = profileId;
+}
+
+/** Forget a deleted profile everywhere it was seated. */
+export function unseat(s: LifeState, profileId: string): void {
+  for (const p of s.players) if (p.profileId === profileId) p.profileId = undefined;
 }
 
 export type Seat = { player: number; turned: boolean; column: string; row: number };

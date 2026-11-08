@@ -1,8 +1,23 @@
 <script lang="ts">
+  import { fontById } from '../../lib/fonts';
+  import { imageUrl } from '../../lib/images.svelte';
   import { persisted } from '../../lib/persisted.svelte';
+  import { blankProfile, profileById, profiles, removeProfile, type Profile } from '../../lib/profiles.svelte';
   import { spin } from '../../lib/random';
   import { keepAwake } from '../../lib/wakeLock';
-  import { fresh, MAX_PLAYERS, MIN_PLAYERS, repair, resetLife, seats, START_OPTIONS, type LifeState } from './life';
+  import {
+    assignSeat,
+    fresh,
+    MAX_PLAYERS,
+    MIN_PLAYERS,
+    repair,
+    resetLife,
+    seats,
+    START_OPTIONS,
+    unseat,
+    type LifeState,
+  } from './life';
+  import ProfileEditor from './ProfileEditor.svelte';
 
   let { onexit }: { onexit: () => void } = $props();
 
@@ -11,6 +26,28 @@
   let board: HTMLDivElement;
 
   const layout = $derived(seats(s.count));
+
+  /** How a seat looks: its profile if one is seated there, otherwise the guest name and colour. */
+  function look(i: number) {
+    const p = s.players[i];
+    const prof = profileById(p.profileId);
+    return {
+      name: prof?.name ?? p.name,
+      color: prof?.color ?? p.color,
+      font: fontById(prof?.font),
+      bg: imageUrl(prof?.bg?.image),
+      credit: prof?.bg?.credit,
+    };
+  }
+
+  // Profile editor, opened from the menu. Null while closed.
+  let editing = $state<{ profile: Profile; existing: boolean } | null>(null);
+  function deleteEditing() {
+    if (!editing || !confirm(`Delete the profile "${editing.profile.name}"?`)) return;
+    unseat(s, editing.profile.id);
+    removeProfile(editing.profile.id);
+    editing = null;
+  }
 
   $effect(() => keepAwake());
 
@@ -115,15 +152,24 @@
 <div class="board" bind:this={board} style:grid-template-columns="repeat({layout.columns}, 1fr)">
   {#each layout.seats as seat (seat.player)}
     {@const p = s.players[seat.player]}
+    {@const lk = look(seat.player)}
     {@const d = deltas[seat.player]}
-    <div class="seat" style:grid-row={seat.row} style:grid-column={seat.column} style:--c={p.color}>
-      <div class="panel" class:turned={seat.turned} class:dead={p.life <= 0} class:lit={lit === seat.player}>
+    <div class="seat" style:grid-row={seat.row} style:grid-column={seat.column} style:--c={lk.color}>
+      <div
+        class="panel"
+        class:turned={seat.turned}
+        class:dead={p.life <= 0}
+        class:lit={lit === seat.player}
+        class:pic={!!lk.bg}
+        style:background-image={lk.bg ? `url("${lk.bg}")` : undefined}
+      >
+        {#if lk.bg}<div class="shade"></div>{/if}
         {#if first === seat.player}
           <div class="banner">Goes first!</div>
         {/if}
         <button
           class="hit minus"
-          aria-label="{p.name} loses 1 life (hold for 10)"
+          aria-label="{lk.name} loses 1 life (hold for 10)"
           onpointerdown={(e) => press(e, seat.player, -1)}
           onpointerup={release}
           onpointercancel={release}
@@ -132,18 +178,19 @@
         >
         <button
           class="hit plus"
-          aria-label="{p.name} gains 1 life (hold for 10)"
+          aria-label="{lk.name} gains 1 life (hold for 10)"
           onpointerdown={(e) => press(e, seat.player, 1)}
           onpointerup={release}
           onpointercancel={release}
           onlostpointercapture={release}
           oncontextmenu={(e) => e.preventDefault()}><span>+</span></button
         >
-        <div class="info">
-          <div class="name">{p.name}</div>
+        <div class="info" style:font-family={lk.font.family} style:--fw={lk.font.weight} style:--fs={lk.font.scale}>
+          <div class="name">{lk.name}</div>
           <div class="life">{p.life}</div>
           <div class="delta" class:show={d !== 0}>{d > 0 ? `+${d}` : d < 0 ? `−${-d}` : '·'}</div>
         </div>
+        {#if lk.credit}<div class="credit">{lk.credit}</div>{/if}
       </div>
     </div>
   {/each}
@@ -153,7 +200,13 @@
   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
 </button>
 
-{#if menu}
+{#if editing}
+  <ProfileEditor
+    profile={editing.profile}
+    onclose={() => (editing = null)}
+    ondelete={editing.existing ? deleteEditing : undefined}
+  />
+{:else if menu}
   <div class="sheet-backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && (menu = false)}>
     <div class="sheet" role="dialog" aria-label="Life counter menu">
       <h2>Life Counter</h2>
@@ -172,17 +225,44 @@
         {/each}
       </div>
 
-      <h3>Names</h3>
+      <h3>Seats</h3>
+      <p class="hint">Seats remember who sits there, so the next game starts with the same people.</p>
       <div class="names">
         {#each s.players.slice(0, s.count) as p, i (i)}
-          <label style:--c={p.color}>
+          <div class="seat-row" style:--c={look(i).color}>
             <span class="dot"></span>
-            <input bind:value={p.name} maxlength="20" aria-label="Player {i + 1} name" />
-          </label>
+            <select
+              value={p.profileId ?? ''}
+              aria-label="Who sits in seat {i + 1}"
+              onchange={(e) => assignSeat(s, i, e.currentTarget.value || undefined)}
+            >
+              <option value="">Guest</option>
+              {#each profiles.list as prof (prof.id)}
+                <option value={prof.id}>{prof.name}</option>
+              {/each}
+            </select>
+            {#if !p.profileId}
+              <input bind:value={p.name} maxlength="20" aria-label="Seat {i + 1} guest name" />
+            {/if}
+          </div>
         {/each}
       </div>
 
-      <h3>&nbsp;</h3>
+      <h3>Profiles</h3>
+      <div class="row">
+        {#each profiles.list as prof (prof.id)}
+          <button
+            class="btn chip"
+            style:--c={prof.color}
+            onclick={() => (editing = { profile: prof, existing: true })}
+          >
+            <span class="dot"></span>{prof.name}
+          </button>
+        {/each}
+        <button class="btn" onclick={() => (editing = { profile: blankProfile(), existing: false })}>+ New profile</button>
+      </div>
+
+      <div class="gap"></div>
       <div class="row">
         <button class="btn wide" onclick={pickFirst}>🎲 Random first player</button>
       </div>
@@ -220,6 +300,28 @@
     background: color-mix(in srgb, var(--c) 55%, #111);
     container-type: size;
     transition: filter 0.3s;
+  }
+  .panel.pic {
+    background-size: cover;
+    background-position: center;
+  }
+  /* Tint over a picture so the life total reads on any image; a hint of the profile colour keeps seats apart. */
+  .shade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(color-mix(in srgb, var(--c) 25%, rgb(0 0 0 / 35%)), rgb(0 0 0 / 50%));
+  }
+  .panel.pic .info {
+    text-shadow: 0 2px 10px rgb(0 0 0 / 70%);
+  }
+  .credit {
+    position: absolute;
+    left: 12px;
+    bottom: 8px;
+    font-size: 11px;
+    color: rgb(255 255 255 / 70%);
+    pointer-events: none;
   }
   .panel.turned {
     transform: rotate(180deg);
@@ -259,6 +361,8 @@
     }
   }
   .hit {
+    /* Positioned so the +/− marks paint above a picture's tint. */
+    position: relative;
     flex: 1;
     display: flex;
     align-items: center;
@@ -295,8 +399,8 @@
     white-space: nowrap;
   }
   .life {
-    font-size: min(46cqh, 30cqw);
-    font-weight: 800;
+    font-size: calc(min(46cqh, 30cqw) * var(--fs, 1));
+    font-weight: var(--fw, 800);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.03em;
     margin: 2cqh 0;
@@ -334,7 +438,7 @@
     display: grid;
     gap: 8px;
   }
-  .names label {
+  .seat-row {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -346,11 +450,26 @@
     background: var(--c);
     flex: none;
   }
-  .names input {
+  .names input,
+  .names select {
     flex: 1;
+    min-width: 0;
     padding: 8px 12px;
     border-radius: 10px;
     border: 1px solid var(--border);
     background: var(--surface-2);
+  }
+  .names select {
+    flex: 0 1 45%;
+  }
+  .hint {
+    margin: -4px 0 10px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
   }
 </style>

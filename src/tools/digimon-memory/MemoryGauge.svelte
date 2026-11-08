@@ -132,7 +132,7 @@
         <button class="btn wide" class:on={s.facing} onclick={() => (s.facing = true)}>Face them (across)</button>
         <button class="btn wide" class:on={!s.facing} onclick={() => (s.facing = false)}>Face me (same side)</button>
       </div>
-      <h3>&nbsp;</h3>
+      <div class="gap"></div>
       <div class="row">
         <button class="btn wide" onclick={() => (menu = false)}>Close</button>
         <button class="btn wide" onclick={onexit}>All tools</button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fresh, repair, resetLife, seats } from './life';
+import { assignSeat, fresh, repair, resetLife, seats, unseat } from './life';
 
 describe('mtg life', () => {
   it('seats everyone exactly once, split across both edges', () => {
@@ -29,6 +29,18 @@ describe('mtg life', () => {
     expect(s.players).toHaveLength(6);
     expect(s.players[0].name).toBe('Ana');
     expect(s.players[1].life).toBe(20);
+  });
+
+  it('keeps a profile in one seat only, and through a new game', () => {
+    const s = fresh(4, 40);
+    assignSeat(s, 0, 'me');
+    assignSeat(s, 1, 'buddy');
+    assignSeat(s, 2, 'me');
+    expect(s.players.map((p) => p.profileId).slice(0, 3)).toEqual([undefined, 'buddy', 'me']);
+    resetLife(s);
+    expect(repair(s).players[2].profileId).toBe('me');
+    unseat(s, 'buddy');
+    expect(s.players[1].profileId).toBeUndefined();
   });
 
   it('resets everyone to the starting life', () => {

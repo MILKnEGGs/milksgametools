@@ -113,3 +113,6 @@ select {
   background: var(--accent, #f4f4f5);
   color: #111;
 }
+.sheet .gap {
+  height: 18px;
+}
